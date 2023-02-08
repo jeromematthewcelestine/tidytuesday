@@ -1,35 +1,179 @@
 ---
-title: "Tidy Tuesday - Pet Cats"
+title: "Tidy Tuesday - Movebank"
 author: "Jerome Williams"
-date: "2023-02-04"
+date: "2023-01-31"
 output: github_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+This week's data is from the [Movebank for Animal Tracking Data](https://www.datarepository.movebank.org/handle/10255/move.882). This data was collected in connection with [Kays et al. (2020)](https://doi.org/10.1111/acv.12563).
+
+```{r setup, include=FALSE, echo=FALSE, message = FALSE}
+library(tidyverse)
+library(ggmap)
+library(lubridate)
+library(ggpattern)
+
+shared_caption = "Source: Movebank for Animal Tracking Data"
+
+
+cats <- read_csv("cats_uk.csv")
+
+cats_df <- cats %>% 
+  filter(algorithm_marked_outlier == FALSE, manually_marked_outlier == FALSE) %>%
+  group_by(tag_id) %>% 
+  mutate(avg_long = median(location_long),
+         avg_lat = median(location_lat),
+         deviation_long = location_long - avg_long,
+         deviation_lat = location_lat - avg_lat)
+
 ```
 
-## R Markdown
+## Overview
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+My understanding is that the data contains records from June-August 2017 of observations of tags that were attached to a number of pet cats in the United Kingdom. Each record contains the coordinates and timetamp of a location "event". As yet, I don't know what triggers an "event" but for now we will take the events as given.
 
-Kays R, Dunn RR, Parsons AW, Mcdonald B, Perkins T, Powers S, Shell L, McDonald JL, Cole H, Kikillus H, Woods L, Tindle H, Roetman P (2020) The small home ranges and large local ecological impacts of pet cats. Animal Conservation. doi:10.1111/acv.12563
+First let's make a simple map of the cat location events. The plot below shows each tagged cat's median location in the dataset, after removing observations that have been classified as outliers. The basemap used here is from [Stamen](https://stamen.com/).
 
-Movebank data package:
-McDonald JL, Cole H (2020) Data from: The small home ranges and large local ecological impacts of pet cats [United Kingdom]. Movebank Data Repository. doi:10.5441/001/1.pf315732
+```{r locations, echo = FALSE, message = FALSE}
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+by_cat <- cats_df %>% group_by(tag_id) %>%
+  summarize(median_lat = median(location_lat), median_long = median(location_long))
 
-```{r cars}
-summary(cars)
+
+
+qmplot(data = by_cat, x = median_long, y = median_lat, maptype = "toner-lite", color = I("red"), size = I(1)) + labs(title = "Average Location of Cats in Movebank Dataset",
+       caption = paste0(shared_caption, "; OpenStreetMap via Stamen"))
+
+n_cats <- by_cat %>% nrow()
+
+
 ```
 
-## Including Plots
+So it seems that the "UK" data is restricted to a set of cats in Cornwall. At least that will make plotting easier. The dataset contains data on `r n_cats` cats.
 
-You can also embed plots, for example:
+## Cat Ranges
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+Next, let's look at how cats move around their homes.
+
+The plot below plots (for all cats in the dataset) the position of each observation relative its cat's median location. Most observations are clustered around their respective medians, as expected. However, there are also some interesting features -- it looks like at least one or two cats have multiple home bases (or have moved house during the relevant period). There is also the interesting straight line on the left side of the plot -- I am interested in seeing if we can explain that. I suspect the observations in the bottom right corner may turn out to be data errors.
+
+Note: for simplicity, I keep the location data in units of longitude and latitude, even though we are now examining distance converting to units of distance would be more appropriate. 
+
+
+```{r ranges, echo = FALSE, message = FALSE}
+
+ggplot(cats_df) + 
+  geom_point(aes(x = deviation_long, y = deviation_lat), size = 0.2, alpha = 0.2) +
+  theme_bw() +
+  labs(title = "Observed locations relative to median locations (per cat)",
+       x = "Longitude (deviation)", y = "Latitude (deviation)",
+       caption = shared_caption)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Let's try to find some of the cats with the interesting movement patterns. Below, I filter to cats with the largest ranges (for convenience, arbitrarily defined as longitude range plus latitude range) and plot each separately.
+
+```{r ranges-separate, echo = FALSE, message = FALSE}
+
+by_cat <- cats_df %>% 
+  group_by(tag_id) %>%
+  summarize(max_long = max(location_long), min_long = min(location_long),
+            max_lat = max(location_lat), min_lat = min(location_lat),
+            range_long = max_long - min_long, range_lat = max_lat - min_lat,
+            sum_range_long_lat = range_long + range_lat)
+
+cats_top_range <- by_cat %>% 
+  arrange(-sum_range_long_lat) %>%
+  head(12) %>% 
+  left_join(cats_df, by = "tag_id")
+
+ggplot(cats_top_range) + 
+  geom_point(aes(x = deviation_long, y = deviation_lat), size = 0.1, alpha = 0.2, color = "#FC7300") +
+  facet_wrap(tag_id~.) + theme_bw() +
+  labs(y = "Latitude (deviation)", x = "Longitude (deviation)",
+       title = "Observed locations relative to median location",
+       subtitle = "12 cats with largest ranges",
+       caption = shared_caption)
+
+```
+
+
+
+## Max-Tag
+
+Some of the ranges we observe above (e.g., Bear, Boots, Max, Tom) look like they might lie along roads or rivers. Let's see if we can use street maps to figure determine whether this is the case. First let's look at Max.
+
+Before we look at street maps, I want to check whether Max shuffles between different locations during the period or whether Max simply  starts in one area and later shows up in another area. We will plot Max's locations with an indicator for time. Before we do that, let's check  the time distribution of our Max observations.
+
+```{r max-streets, echo = FALSE, message = FALSE}
+
+max <- cats_df %>% filter(tag_id == "Max-Tag")
+
+max_plot_data <- max %>%
+  mutate(date_ = date(timestamp),
+         dayofweek = wday(timestamp),
+         weekend = (dayofweek == 1 | dayofweek == 7))
+
+ggplot(max_plot_data) +
+  geom_bar(aes(x = date_, fill = weekend), show.legend = FALSE) +
+  scale_x_date(breaks = function(x) seq.Date(from = min(x),
+                                 to = max(x), 
+                                 by = "1 day"),
+               labels = function(x) paste0(wday(x, label = TRUE), "\n", format(x, "%b %d"), "")) +
+  scale_fill_manual(values = c("red", "darkred")) +
+  theme_bw() +
+  labs(title = "Observations for \"Max-Tag\"",
+       subtitle = "7/17/17 - 7/23/17",
+       x = "",
+       y = "Number of observations",
+       caption = shared_caption)
+
+```
+
+So we are dealing with a single week's worth of data. It's unclear to me why Wednesday and Thursday would have fewer observations, but, as mentioned above, I don't yet know what triggers an event. One hypothesis to bear in mind is that it may have been raining on Wednesday and Thursday.
+
+```{r max-range-01, echo = FALSE, message = FALSE}
+
+ggplot(max) +
+  geom_point(aes(x = location_long,
+                 y = location_lat,
+                 color = as_factor(day(timestamp))),
+             size = 1.5) + theme_bw() +
+  labs(x = "Longitude", y = "Latitude", color = "Date (of July 2017)",
+       title = "Observations for Max-Tag by Location and Day",
+       subtitle = "7/17/23 - 7/23/17",
+       caption = shared_caption)
+```
+
+Max seems to have at least two homes. There are observations at south-east location on the 17th and 18th but then again on the 22nd.  Let's see if see what Max is traversing with a basemap from the Google Maps Platform.
+
+```{r max_basemap, echo = FALSE, message = FALSE}
+
+# register_google(key = "[[API key here]]")
+
+get_bbox <- function(df) {
+  c(left = min(df$location_long) - 0.01,
+    right = max(df$location_long) + 0.01,
+    bottom = min(df$location_lat) - 0.01,
+    top = max(df$location_lat) + 0.01)
+} # add a small buffer to the bounding box
+
+max_bbox <- get_bbox(max)
+max_basemap <- get_map(location = max_bbox,
+                        maptype = "hybrid",
+                        source = "google")
+ggmap(max_basemap) +
+  geom_point(data = max,
+             aes(x = location_long, y = location_lat),
+             show.legend = FALSE, color = "white", size = 0.1) + 
+  labs(title = "Position of Max-Tag Observations",
+       subtitle = "7/17/23 - 7/23/17",
+       x = "Longitude",
+       y = "Latitude",
+       caption = shared_caption)
+```
+
+As we guessed, Max travels along roads between two different locations, the "Farmhouse B&B in the south-east part of the map and the built-up area on the western part of the map.
+
+
+
