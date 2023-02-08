@@ -52,11 +52,6 @@ patterns. Below, I filter to cats with the largest ranges (for
 convenience, arbitrarily defined as longitude range plus latitude range)
 and plot each separately.
 
-    ## Warning in left_join(., cats_df, by = "tag_id"): Each row in `x` is expected to match at most 1 row in `y`.
-    ## i Row 1 of `x` matches multiple rows.
-    ## i If multiple matches are expected, set `multiple = "all"` to silence this
-    ##   warning.
-
 ![](tidytuesday-petcats_files/figure-gfm/ranges-separate-1.png)<!-- -->
 
 ## Max-Tag
@@ -90,5 +85,5 @@ Maps Platform.
 ![](tidytuesday-petcats_files/figure-gfm/max_basemap-1.png)<!-- -->
 
 As we guessed, Max travels along roads between two different locations,
-the “Farmhouse B&B in the south-east part of the map and the built-up
+the “Farmhouse B&B” in the south-east part of the map and the built-up
 area on the western part of the map.
