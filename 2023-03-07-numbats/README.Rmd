@@ -1,0 +1,23 @@
+---
+title: "Tidy Tuesday - Numbats"
+author: "Jerome Williams"
+date: "2023-03-08"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+
+library(tidyverse)
+library(readr)
+
+df <- read_csv("numbats.csv")
+
+```
+
+```{r}
+head(df)
+names(df)
+summary(df)
+```
+
+
