@@ -12,11 +12,11 @@ library(tidyverse)
 library(ggmap)
 library(lubridate)
 library(ggpattern)
+library(here)
 
 shared_caption = "Source: Movebank for Animal Tracking Data"
 
-
-cats <- read_csv("cats_uk.csv")
+cats <- read_csv(here("2023-01-31-petcats/data", "cats_uk.csv"))
 
 cats_df <- cats %>% 
   filter(algorithm_marked_outlier == FALSE, manually_marked_outlier == FALSE) %>%
@@ -30,16 +30,14 @@ cats_df <- cats %>%
 
 ## Overview
 
-My understanding is that the data contains records from June-August 2017 of observations of tags that were attached to a number of pet cats in the United Kingdom. Each record contains the coordinates and timetamp of a location "event". As yet, I don't know what triggers an "event" but for now we will take the events as given.
+The dataset contains records from June 2017 until August 2017 of observations of tags that were attached to a number of pet cats in the United Kingdom. Each record contains the coordinates and timestamp of a location "event".
 
-First let's make a simple map of the cat location events. The plot below shows each tagged cat's median location in the dataset, after removing observations that have been classified as outliers. The basemap used here is from [Stamen](https://stamen.com/).
+First, let's make a simple map of the cat location events. The plot below shows each tagged cat's median location in the dataset, after removing outliers (as classified by the dataset). The basemap used here is from [Stamen](https://stamen.com/).
 
 ```{r locations, echo = FALSE, message = FALSE}
 
 by_cat <- cats_df %>% group_by(tag_id) %>%
   summarize(median_lat = median(location_lat), median_long = median(location_long))
-
-
 
 qmplot(data = by_cat, x = median_long, y = median_lat, maptype = "toner-lite", color = I("red"), size = I(1)) + labs(title = "Average Location of Cats in Movebank Dataset",
        caption = paste0(shared_caption, "; OpenStreetMap via Stamen"))
